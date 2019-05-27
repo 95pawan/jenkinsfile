@@ -1,0 +1,52 @@
+pipeline {
+    agent any
+    parameters{
+        choice(
+            
+        choices:'\nAzure',
+        description:'choose the cloud provider',
+        name:'PUBLIC_CLOUD')
+    }
+     stages{
+    stage ('checkout'){
+        when {
+                // checkout when Azure is  requested
+                expression { params.PUBLIC_CLOUD == 'Azure' }
+            }
+    steps{
+    checkout scm
+}}
+
+ // Mark the code build 'plan'....
+         
+            // Output Terraform version
+            
+            
+            stage ('Initialize Terraform'){
+                when {
+                // checkout when Azure is  requested
+                expression { params.PUBLIC_CLOUD == 'Azure' }
+                }
+                steps{
+            sh "terraform init"
+            }}
+       
+            stage ('Terraform Plan'){
+                when {
+                // checkout when Azure is  requested
+                expression { params.PUBLIC_CLOUD == 'Azure' }
+                }
+                steps{
+        
+            
+             sh '''
+         
+         
+         terraform apply -input=true -auto-approve
+         
+         '''
+            
+            }
+            }
+}
+}
