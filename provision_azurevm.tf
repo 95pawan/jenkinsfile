@@ -1,176 +1,134 @@
-
 # Configure the Microsoft Azure Provider
 provider "azurerm" {
-subscription_id = "4c532d7a-ab03-4249-b257-67f510c22431"
+subscription_id = "cbe76251-44c1-44b7-bf4c-ddfb8b65d2e3"
    
- client_id       = "77fe96ad-991f-473b-9a02-7ec90dfd2be5"
+ client_id       = "0ada6388-c5c9-4364-8d02-9928346b8f91"
    
- client_secret   = "pmzf]bkbUxByBgDa1.pgEV*Fte+gb135"
+ client_secret   = "AE1myetO59THt+E8auZ.Rafr=IQ[4sXT"
   
-  tenant_id       = "2a495b58-4bda-42e0-862b-92e88f630d71"
+ tenant_id       = "93f33571-550f-43cf-b09f-cd331338d086"
 
 }
 
-
-# Create a resource group if it doesn’t exist
-resource "azurerm_resource_group" "vm" {
-    name     = "${var.resource_group_name}"
-    location = "${var.location}"
-    tags     = "${var.tags}"
+resource "azurerm_resource_group" "test" {
+  name     = "acctestrg"
+  location = "West US 2"
 }
 
-resource "random_id" "vm-sa" {
-  keepers = {
-    vm_hostname = "${var.vm_hostname}"
+resource "azurerm_virtual_network" "test" {
+  name                = "acctvnn"
+  address_space       = ["10.0.0.0/16"]
+  location            = "${azurerm_resource_group.test.location}"
+  resource_group_name = "${azurerm_resource_group.test.name}"
+}
+
+resource "azurerm_subnet" "test" {
+  name                 = "acctsub"
+  resource_group_name  = "${azurerm_resource_group.test.name}"
+  virtual_network_name = "${azurerm_virtual_network.test.name}"
+  address_prefix       = "10.0.2.0/24"
+}
+
+resource "azurerm_public_ip" "test" {
+    name                         = "myPublicIP"
+    location                     = "${azurerm_resource_group.test.location}"
+    resource_group_name          = "${azurerm_resource_group.test.name}"
+    public_ip_address_allocation = "dynamic"
+}
+
+
+resource "azurerm_network_interface" "test" {
+  name                = "acctni"
+  location            = "${azurerm_resource_group.test.location}"
+  resource_group_name = "${azurerm_resource_group.test.name}"
+
+  ip_configuration {
+    name                          = "testconfiguration1"
+    subnet_id                     = "${azurerm_subnet.test.id}"
+    private_ip_address_allocation = "dynamic"
+	public_ip_address_id          = "${azurerm_public_ip.test.id}"
+  }
+}
+
+resource "azurerm_managed_disk" "test" {
+  name                 = "datadisk_existing"
+  location             = "${azurerm_resource_group.test.location}"
+  resource_group_name  = "${azurerm_resource_group.test.name}"
+  storage_account_type = "Standard_LRS"
+  create_option        = "Empty"
+  disk_size_gb         = "1023"
+}
+
+resource "azurerm_virtual_machine" "test" {
+  name                  = "acctvm"
+  location              = "${azurerm_resource_group.test.location}"
+  resource_group_name   = "${azurerm_resource_group.test.name}"
+  network_interface_ids = ["${azurerm_network_interface.test.id}"]
+  vm_size               = "Standard_DS1_v2"
+
+  # Uncomment this line to delete the OS disk automatically when deleting the VM
+  # delete_os_disk_on_termination = true
+
+  # Uncomment this line to delete the data disks automatically when deleting the VM
+  # delete_data_disks_on_termination = true
+
+  storage_image_reference {
+    publisher = "Canonical"
+    offer     = "UbuntuServer"
+    sku       = "16.04-LTS"
+    version   = "latest"
   }
 
-  byte_length = 6
+  storage_os_disk {
+    name              = "myosdisk1"
+    caching           = "ReadWrite"
+    create_option     = "FromImage"
+    managed_disk_type = "Standard_LRS"
+  }
+
+  # Optional data disks
+  storage_data_disk {
+    name              = "datadisk_new"
+    managed_disk_type = "Standard_LRS"
+    create_option     = "Empty"
+    lun               = 0
+    disk_size_gb      = "1023"
+  }
+
+  storage_data_disk {
+    name            = "${azurerm_managed_disk.test.name}"
+    managed_disk_id = "${azurerm_managed_disk.test.id}"
+    create_option   = "Attach"
+    lun             = 1
+    disk_size_gb    = "${azurerm_managed_disk.test.disk_size_gb}"
+  }
+
+  os_profile {
+    computer_name  = "hostname"
+    admin_username = "testadmin"
+    admin_password = "Password1234!"
+  }
+
+  os_profile_linux_config {
+    disable_password_authentication = false
+  }
+
+  tags {
+    environment = "staging"
+  }
 }
 
-# Create virtual network
-resource "azurerm_virtual_network" "vm" {
-    name                = "${var.vm_hostname}"
-    address_space       = ["10.0.0.0/16"]
-    location            = "${var.location}"
-    resource_group_name = "${azurerm_resource_group.vm.name}"
-	tags                = "${var.tags}"
-	
-}
-
-# Create subnet
-resource "azurerm_subnet" "vm" {
-    name                 = "terrasubnet"
-    resource_group_name  = "${azurerm_resource_group.vm.name}"
-    virtual_network_name = "${azurerm_virtual_network.vm.name}"
-    address_prefix       = "10.0.1.0/24"
-}
-
-# Create public IPs
-resource "azurerm_public_ip" "vm" {
-    name                         = "${var.vm_hostname}-${count.index}-publicIP"
-    location                     = "${var.location}"
-    resource_group_name          = "${azurerm_resource_group.vm.name}"
-    public_ip_address_allocation = "${var.public_ip_address_allocation}"
-    domain_name_label             = "${var.public_ip_dns}"
-
-	
- 
-    tags                         = "${var.tags}"
-}
-
-# Create Network Security Group and rule
-resource "azurerm_network_security_group" "vm" {
-    name                = "${var.vm_hostname}-nsg"
-    location            = "${azurerm_resource_group.vm.location}"
-    resource_group_name = "${azurerm_resource_group.vm.name}"
-
-    security_rule {
-        name                       = "SSH"
-        priority                   = 1001
-        direction                  = "Inbound"
-        access                     = "Allow"
-        protocol                   = "Tcp"
-        source_port_range          = "*"
-        destination_port_range     = "22"
-        source_address_prefix      = "*"
-        destination_address_prefix = "*"
-    }
-	 security_rule {
-        name                       = "http"
-        priority                   = 1002
-        direction                  = "Inbound"
-        access                     = "Allow"
-        protocol                   = "Tcp"
-        source_port_range          = "*"
-        destination_port_range     = "80"
-        source_address_prefix      = "*"
-        destination_address_prefix = "*"
-    }
-     security_rule {
-        name                       = "PORT_8081"
-        priority                   = 1003
-        direction                  = "Inbound"
-        access                     = "Allow"
-        protocol                   = "Tcp"
-        source_port_range          = "*"
-        destination_port_range     = "8081"
-        source_address_prefix      = "*"
-        destination_address_prefix = "*"
-    }
-
-    tags                         = "${var.tags}"
-}
-
-# Create network interface
-resource "azurerm_network_interface" "vm" {
-    count                     = "${var.nb_instances}"
-    name                      = "nic-${var.vm_hostname}-${count.index}"
-    location                  = "${azurerm_resource_group.vm.location}"
-    resource_group_name       = "${azurerm_resource_group.vm.name}"
-    network_security_group_id = "${azurerm_network_security_group.vm.id}"
-
-    ip_configuration {
-        name                          = "ipconfig${count.index}"
-        subnet_id                     = "${azurerm_subnet.vm.id}"
-        private_ip_address_allocation = "dynamic"
-        public_ip_address_id          = "${azurerm_public_ip.vm.id}"
-    }
-
-    
-}
+resource "azurerm_virtual_machine_extension" "test" {
+  name                 = "jenkins"
+  location             = "${azurerm_resource_group.test.location}"
+  resource_group_name  = "${azurerm_resource_group.test.name}"
+  virtual_machine_name = "${azurerm_virtual_machine.test.name}"
+  publisher            = "Microsoft.OSTCExtensions"
+  type                 = "CustomScriptForLinux"
+  type_handler_version = "1.2"
 
 
-# Create storage account for boot diagnostics
-resource "azurerm_storage_account" "vm-sa" {
-    name                        = "diag${random_id.vm-sa.hex}"
-    resource_group_name         = "${azurerm_resource_group.vm.name}"
-    location                    = "${var.location}"
-    account_tier                = "${element(split("_", var.boot_diagnostics_sa_type),0)}"
-    account_replication_type    = "${element(split("_", var.boot_diagnostics_sa_type),1)}"
-    tags                     = "${var.tags}"
-}
-
-# Create virtual machine
-resource "azurerm_virtual_machine" "myterraformvm" {
-    name                  = "${var.vm_hostname}${count.index}"
-    location              = "${var.location}"
-    resource_group_name   = "${azurerm_resource_group.vm.name}"
-    network_interface_ids = ["${element(azurerm_network_interface.vm.*.id, count.index)}"]
-    vm_size               = "${var.vm_size}"
-
-    storage_os_disk {
-        name              = "datadisk-${var.vm_hostname}"
-        caching           = "ReadWrite"
-        create_option     = "FromImage"
-        managed_disk_type = "${var.storage_account_type}"
-    }
-
-    storage_image_reference {
-        publisher = "${var.os_publisher}"
-        offer     = "${var.vm_os_offer}"
-        sku       = "${var.vm_os_sku}"
-        version   = "${var.vm_os_version}"
-    }
-
-    os_profile {
-        computer_name  = "${var.vm_hostname}${count.index}"
-        admin_username = "${var.admin_username}"
-    }
-
-    os_profile_linux_config {
-        disable_password_authentication = true
-        ssh_keys {
-            path     = "/home/${var.admin_username}/.ssh/authorized_keys"
-            key_data = "${var.ssh_key}"
-        }
-    }
-    tags = "${var.tags}"
-    boot_diagnostics {
-        enabled = "${var.boot_diagnostics}"
-        storage_uri = "${var.boot_diagnostics == "true" ? join(",", azurerm_storage_account.vm-sa.*.primary_blob_endpoint) : "" }"
-    }
-
-    
-        
-	
+  tags {
+    environment = "Production"
+  }
 }
